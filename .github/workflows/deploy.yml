@@ -25,7 +25,7 @@ jobs:
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account_email: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
 
       - name: Configure Docker auth
         run: gcloud auth configure-docker gcr.io --quiet
@@ -33,7 +33,7 @@ jobs:
       - name: Build and push container
         run: |
           IMAGE_TAG="gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
-          docker build -t "$IMAGE_TAG" ./ssg-gateway
+          docker build -t "$IMAGE_TAG" .
           docker push "$IMAGE_TAG"
 
       - name: Deploy to Cloud Run
