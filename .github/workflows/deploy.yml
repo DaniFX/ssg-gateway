@@ -9,6 +9,7 @@ on:
 env:
   REGION: europe-west8
   SERVICE_NAME: ssg-gateway
+  IMAGE_NAME: europe-west8-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.SERVICE_NAME }}
 
 jobs:
   deploy:
@@ -27,20 +28,11 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
 
-      - name: Configure Docker auth
-        run: gcloud auth configure-docker europe-west8-docker.pkg.dev --quiet
-
-      - name: Build and push container
-        run: |
-          IMAGE_TAG="europe-west8-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
-          docker build -t "$IMAGE_TAG" .
-          docker push "$IMAGE_TAG"
-
       - name: Deploy to Cloud Run
-        run: |
-          gcloud run deploy ${{ env.SERVICE_NAME }} \
-            --image "europe-west8-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}" \
-            --region ${{ env.REGION }} \
-            --platform managed \
-            --allow-unauthenticated \
-            --port 8080
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          source: ./ssg-gateway
+          flags: --allow-unauthenticated --port=8080
