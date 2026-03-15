@@ -17,9 +17,15 @@ type FirebaseService struct {
 }
 
 func NewFirebaseService(credentialsPath, firestoreProjectID string) (*FirebaseService, error) {
-	opt := option.WithCredentialsFile(credentialsPath)
+	var app *firebase.App
+	var err error
 
-	app, err := firebase.NewApp(context.Background(), nil, opt)
+	if credentialsPath != "" {
+		app, err = firebase.NewApp(context.Background(), nil, option.WithCredentialsFile(credentialsPath))
+	} else {
+		// Use Application Default Credentials (e.g. Cloud Run service account)
+		app, err = firebase.NewApp(context.Background(), nil)
+	}
 	if err != nil {
 		return nil, err
 	}
