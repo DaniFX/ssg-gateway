@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Launch Gateway",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/cmd/gateway",
+            "env": {
+                "GOOGLE_APPLICATION_CREDENTIALS": "${workspaceFolder}/credentials.json",
+                "FIREBASE_PROJECT_ID": "ssg-api-99ac0",
+                "FIRESTORE_PROJECT_ID": "ssg-api-99ac0",
+                "ADMIN_EMAILS": "info@danieleoppezzo.com"
+            }
+        }
+    ]
+}
