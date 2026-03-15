@@ -28,5 +28,6 @@ jobs:
         with:
           service: ssg-gateway
           region: europe-west8
+          source: ./ssg-gateway
           image: europe-west8-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/ssg-gateway:${{ github.sha }}
           flags: --allow-unauthenticated --port=8080
