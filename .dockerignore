@@ -1,0 +1,7 @@
+*
+!.gitignore
+!cmd/
+!go.mod
+!go.sum
+!internal/
+!ssg-db/
