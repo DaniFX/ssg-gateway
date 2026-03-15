@@ -6,7 +6,7 @@ on:
     paths: ['ssg-gateway/**']
 
 env:
-  REGION: europe-west1
+  REGION: europe-west8
   SERVICE_NAME: ssg-gateway
 
 jobs:
