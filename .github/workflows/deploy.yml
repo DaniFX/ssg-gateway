@@ -2,8 +2,8 @@ name: Deploy to Cloud Run
 
 on:
   push:
-    branches: [main]
-    paths: ['ssg-gateway/**']
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
