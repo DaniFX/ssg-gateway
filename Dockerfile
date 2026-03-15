@@ -5,7 +5,7 @@ WORKDIR /app
 RUN apk add --no-cache git
 
 COPY . .
-RUN ls -la /app
+RUN ls -laR /app
 RUN go mod download
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /gateway ./cmd/gateway/main.go
