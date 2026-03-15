@@ -7,7 +7,7 @@ RUN apk add --no-cache git
 COPY . .
 RUN go mod download
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o /gateway ./cmd/gateway
+RUN CGO_ENABLED=0 GOOS=linux go build -o /gateway ./cmd/gateway/main.go
 
 FROM alpine:3.19
 
