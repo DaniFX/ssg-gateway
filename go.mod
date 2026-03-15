@@ -11,8 +11,6 @@ require (
 	google.golang.org/api v0.190.0
 )
 
-replace github.com/ssg/ssg-db => ../ssg-db
-
 require (
 	cloud.google.com/go v0.115.0 // indirect
 	cloud.google.com/go/auth v0.7.3 // indirect
