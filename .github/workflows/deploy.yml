@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths: ['ssg-gateway/**']
+  workflow_dispatch:
 
 env:
   REGION: europe-west8
