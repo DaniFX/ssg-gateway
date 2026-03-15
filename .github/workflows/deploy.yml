@@ -28,5 +28,5 @@ jobs:
         with:
           service: ssg-gateway
           region: europe-west8
-          source: ssg-gateway
+          source: .
           flags: --allow-unauthenticated --port=8080
