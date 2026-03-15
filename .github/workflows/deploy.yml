@@ -6,11 +6,6 @@ on:
     paths: ['ssg-gateway/**']
   workflow_dispatch:
 
-env:
-  REGION: europe-west8
-  SERVICE_NAME: ssg-gateway
-  IMAGE_NAME: europe-west8-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.SERVICE_NAME }}
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -31,8 +26,8 @@ jobs:
       - name: Deploy to Cloud Run
         uses: google-github-actions/deploy-cloudrun@v2
         with:
-          service: ${{ env.SERVICE_NAME }}
-          region: ${{ env.REGION }}
-          image: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          service: ssg-gateway
+          region: europe-west8
+          image: europe-west8-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/ssg-gateway:${{ github.sha }}
           source: ./ssg-gateway
           flags: --allow-unauthenticated --port=8080
