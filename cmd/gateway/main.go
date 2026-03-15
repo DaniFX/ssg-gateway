@@ -53,6 +53,13 @@ func main() {
 	appID := "ssg-admin"
 	authMiddleware := middleware.NewFirebaseAuthMiddleware(firebaseService, userRepo, appID, cfg.AdminConfig.Emails)
 
+	communicatorClient, err := services.NewCommunicatorClient(cfg)
+	if err != nil {
+		log.Printf("Warning: Failed to initialize communicator client: %v", err)
+	} else {
+		defer communicatorClient.Close()
+	}
+
 	r := gin.Default()
 
 	r.Use(cors.New(cors.Config{
@@ -77,6 +84,7 @@ func main() {
 	userHandler := handlers.NewUserHandler(userRepo, roleRepo, firebaseService, appID)
 	roleHandler := handlers.NewRoleHandler(roleRepo)
 	appHandler := handlers.NewAppHandler(appRepo)
+	communicatorHandler := handlers.NewCommunicatorHandler(communicatorClient)
 
 	r.GET("/health", healthHandler.Health)
 	r.GET("/ready", healthHandler.Ready)
@@ -141,6 +149,8 @@ func main() {
 				admin.POST("/apps", appHandler.CreateApp)
 				admin.PUT("/apps/:id", appHandler.UpdateApp)
 				admin.DELETE("/apps/:id", appHandler.DeleteApp)
+
+				admin.POST("/send-email", communicatorHandler.SendEmail)
 			}
 		}
 	}

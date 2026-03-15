@@ -6,11 +6,12 @@ import (
 )
 
 type Config struct {
-	Port            string
-	Environment     string
-	FirebaseConfig  FirebaseConfig
-	FirestoreConfig FirestoreConfig
-	AdminConfig     AdminConfig
+	Port               string
+	Environment        string
+	FirebaseConfig     FirebaseConfig
+	FirestoreConfig    FirestoreConfig
+	AdminConfig        AdminConfig
+	CommunicatorConfig CommunicatorConfig
 }
 
 type FirebaseConfig struct {
@@ -26,6 +27,10 @@ type FirestoreConfig struct {
 
 type AdminConfig struct {
 	Emails []string
+}
+
+type CommunicatorConfig struct {
+	Address string
 }
 
 func Load() *Config {
@@ -45,6 +50,9 @@ func Load() *Config {
 		},
 		AdminConfig: AdminConfig{
 			Emails: parseEmails(adminEmails),
+		},
+		CommunicatorConfig: CommunicatorConfig{
+			Address: getEnv("COMMUNICATOR_ADDR", "localhost:8081"),
 		},
 	}
 }
