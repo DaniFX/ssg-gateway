@@ -53,3 +53,11 @@ func (c *Client) Role() repository.RoleRepository {
 func (c *Client) App() repository.AppRepository {
 	return NewAppRepository(c.client)
 }
+
+func (c *Client) Service() repository.ServiceRepository {
+	return NewServiceRepository(c.client)
+}
+
+func (c *Client) ServiceEndpoint() repository.ServiceEndpointRepository {
+	return NewServiceEndpointRepository(c.client)
+}

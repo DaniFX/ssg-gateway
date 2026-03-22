@@ -7,15 +7,15 @@ import (
 	"net/http"
 	"time"
 
-	firestore "github.com/ssg/ssg-db/client/firestore"
-	"github.com/ssg/ssg-db/models"
-	"github.com/ssg/ssg-db/repository"
+	ssgfirestore "github.com/ssg/ssg-db/client/firestore"
+	models "github.com/ssg/ssg-db/models"
+	repository "github.com/ssg/ssg-db/repository"
 	"github.com/ssg/ssg-gateway/internal/config"
 )
 
 // DiscoveryService handles discovering services and their endpoints
 type DiscoveryService struct {
-	dbClient          *firestore.Client
+	dbClient          *ssgfirestore.Client
 	cfg               *config.Config
 	httpClient        *http.Client
 	discoveryInterval time.Duration
@@ -26,16 +26,15 @@ type DiscoveryService struct {
 }
 
 // NewDiscoveryService creates a new discovery service
-func NewDiscoveryService(dbClient *firestore.Client, cfg *config.Config, updateCallback func() error) *DiscoveryService {
-	fc := dbClient.GetClient()
+func NewDiscoveryService(dbClient *ssgfirestore.Client, cfg *config.Config, updateCallback func() error) *DiscoveryService {
 	return &DiscoveryService{
 		dbClient:          dbClient,
 		cfg:               cfg,
 		httpClient:        &http.Client{Timeout: 10 * time.Second},
 		discoveryInterval: 30 * time.Second, // Discover every 30 seconds
 		stopChan:          make(chan struct{}),
-		serviceRepo:       firestore.NewServiceRepository(fc),
-		endpointRepo:      firestore.NewServiceEndpointRepository(fc),
+		serviceRepo:       dbClient.Service(),
+		endpointRepo:      dbClient.ServiceEndpoint(),
 		updateCallback:    updateCallback,
 	}
 }

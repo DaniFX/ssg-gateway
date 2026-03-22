@@ -13,6 +13,13 @@
                 "FIRESTORE_PROJECT_ID": "ssg-api-99ac0",
                 "ADMIN_EMAILS": "info@danieleoppezzo.com"
             }
+        },
+        {
+            "name": "Attach to Go Process",
+            "type": "go",
+            "request": "attach",
+            "mode": "local",
+            "processId": 0
         }
     ]
 }

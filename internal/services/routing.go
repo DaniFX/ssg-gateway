@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	firestore "github.com/ssg/ssg-db/client/firestore"
-	"github.com/ssg/ssg-db/models"
-	"github.com/ssg/ssg-db/repository"
+	ssgfirestore "github.com/ssg/ssg-db/client/firestore"
+	models "github.com/ssg/ssg-db/models"
+	repository "github.com/ssg/ssg-db/repository"
 	"github.com/ssg/ssg-gateway/internal/config"
 
 	"github.com/gin-gonic/gin"
@@ -19,7 +19,7 @@ import (
 
 // RouteConfigurator handles dynamic route configuration based on discovered services
 type RouteConfigurator struct {
-	dbClient     *firestore.Client
+	dbClient     *ssgfirestore.Client
 	cfg          *config.Config
 	router       *gin.Engine
 	serviceRepo  repository.ServiceRepository
@@ -40,13 +40,13 @@ type routeInfo struct {
 }
 
 // NewRouteConfigurator creates a new route configurator
-func NewRouteConfigurator(dbClient *firestore.Client, cfg *config.Config, router *gin.Engine) *RouteConfigurator {
+func NewRouteConfigurator(dbClient *ssgfirestore.Client, cfg *config.Config, router *gin.Engine) *RouteConfigurator {
 	return &RouteConfigurator{
 		dbClient:     dbClient,
 		cfg:          cfg,
 		router:       router,
-		serviceRepo:  firestore.NewServiceRepository(dbClient),
-		endpointRepo: firestore.NewServiceEndpointRepository(dbClient),
+		serviceRepo:  dbClient.Service(),
+		endpointRepo: dbClient.ServiceEndpoint(),
 		httpClient:   &http.Client{Timeout: 30 * time.Second},
 		activeRoutes: make(map[string]*routeInfo),
 		stopChan:     make(chan struct{}),

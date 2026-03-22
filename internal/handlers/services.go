@@ -19,11 +19,10 @@ type ServiceHandler struct {
 
 // NewServiceHandler creates a new service handler
 func NewServiceHandler(discoveryService *services.DiscoveryService, dbClient *firestore.Client) *ServiceHandler {
-	firestoreClient := firestore.NewClientWithClient(dbClient)
 	return &ServiceHandler{
 		serviceService: discoveryService,
-		serviceRepo:    firestoreClient.Service(),
-		endpointRepo:   firestoreClient.ServiceEndpoint(),
+		serviceRepo:    dbClient.Service(),
+		endpointRepo:   dbClient.ServiceEndpoint(),
 	}
 }
 
@@ -151,7 +150,7 @@ func (h *ServiceHandler) GetServiceEndpoints(c *gin.Context) {
 
 // TriggerDiscovery manually triggers service discovery
 func (h *ServiceHandler) TriggerDiscovery(c *gin.Context) {
-	if err := h.serviceService.discoverAllServices(c.Request.Context()); err != nil {
+	if err := h.serviceService.DiscoverAllServices(c.Request.Context()); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"message": err.Error(),
