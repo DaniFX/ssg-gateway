@@ -60,7 +60,16 @@ func main() {
 		defer communicatorClient.Close()
 	}
 
+	// Initialize service discovery service with route update callback
+	discoveryService := services.NewDiscoveryService(dbClient, cfg, nil)
+	// Start discovery in background
+	go discoveryService.Start(context.Background())
+
+	// Initialize route configurator
 	r := gin.Default()
+	routeConfigurator := services.NewRouteConfigurator(dbClient, cfg, r)
+	// Start route configuration in background
+	go routeConfigurator.Start(context.Background())
 
 	r.Use(cors.New(cors.Config{
 		AllowOrigins: []string{
