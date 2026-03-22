@@ -53,7 +53,23 @@ func main() {
 	appID := "ssg-admin"
 	authMiddleware := middleware.NewFirebaseAuthMiddleware(firebaseService, userRepo, appID, cfg.AdminConfig.Emails)
 
+	communicatorClient, err := services.NewCommunicatorClient(cfg)
+	if err != nil {
+		log.Printf("Warning: Failed to initialize communicator client: %v", err)
+	} else {
+		defer communicatorClient.Close()
+	}
+
+	// Initialize service discovery service with route update callback
+	discoveryService := services.NewDiscoveryService(dbClient, cfg, nil)
+	// Start discovery in background
+	go discoveryService.Start(context.Background())
+
+	// Initialize route configurator
 	r := gin.Default()
+	routeConfigurator := services.NewRouteConfigurator(dbClient, cfg, r)
+	// Start route configuration in background
+	go routeConfigurator.Start(context.Background())
 
 	r.Use(cors.New(cors.Config{
 		AllowOrigins: []string{
@@ -77,6 +93,7 @@ func main() {
 	userHandler := handlers.NewUserHandler(userRepo, roleRepo, firebaseService, appID)
 	roleHandler := handlers.NewRoleHandler(roleRepo)
 	appHandler := handlers.NewAppHandler(appRepo)
+	communicatorHandler := handlers.NewCommunicatorHandler(communicatorClient)
 
 	r.GET("/health", healthHandler.Health)
 	r.GET("/ready", healthHandler.Ready)
@@ -141,6 +158,8 @@ func main() {
 				admin.POST("/apps", appHandler.CreateApp)
 				admin.PUT("/apps/:id", appHandler.UpdateApp)
 				admin.DELETE("/apps/:id", appHandler.DeleteApp)
+
+				admin.POST("/send-email", communicatorHandler.SendEmail)
 			}
 		}
 	}

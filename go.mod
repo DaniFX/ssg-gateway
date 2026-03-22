@@ -13,6 +13,7 @@ require (
 	github.com/ssg/ssg-db v0.0.0
 	golang.org/x/time v0.15.0
 	google.golang.org/api v0.190.0
+	google.golang.org/grpc v1.64.1
 )
 
 replace github.com/ssg/ssg-db => ./ssg-db
@@ -72,7 +73,6 @@ require (
 	google.golang.org/genproto v0.0.0-20240730163845-b1a4ccb954bf // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240725223205-93522f1f2a9f // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240730163845-b1a4ccb954bf // indirect
-	google.golang.org/grpc v1.64.1 // indirect
 	google.golang.org/protobuf v1.36.6 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

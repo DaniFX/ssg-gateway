@@ -56,6 +56,47 @@ docker run -p 8080:8080 --env-file .env ssg-gateway
 
 ## Endpoint
 
+## Service Discovery
+
+The gateway includes a service discovery mechanism that automatically discovers and registers microservices. Services expose a `/ _discover` endpoint that returns their metadata and available endpoints.
+
+### How it works
+
+1. The gateway periodically queries Firestore for active services
+2. For each service, it calls the service`s `/ _discover` endpoint
+3. It updates the service metadata and endpoints in Firestore
+4. An optional callback can be triggered to update routing rules
+
+### Discovery Response Format
+
+Services should return a JSON response with:
+
+```json
+{
+  "serviceName": "string",
+  "description": "string",
+  "version": "string",
+  "metadata": {
+    "key": "value"
+  },
+  "endpoints": [
+    {
+      "path": "/api/endpoint",
+      "method": "GET",
+      "summary": "Endpoint description",
+      "inputSchema": {},
+      "outputSchema": {},
+      "authRequired": boolean,
+      "rateLimit": {
+        "requestsPerMinute": number,
+        "burst": number
+      }
+    }
+  ]
+}
+```
+
+
 | Metodo | Path | Descrizione | Auth |
 |--------|------|-------------|------|
 | GET | /health | Health check | No |
