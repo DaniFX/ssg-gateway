@@ -36,25 +36,13 @@ type LoginResponse struct {
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INVALID_REQUEST",
-				"message": "Missing idToken",
-			},
-		})
+		HandleError(c, http.StatusBadRequest, "INVALID_REQUEST", "Failed to bind login request", "Missing idToken", err)
 		return
 	}
 
 	token, err := h.firebaseService.VerifyIDToken(c.Request.Context(), req.IDToken)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INVALID_TOKEN",
-				"message": "Invalid Firebase ID token",
-			},
-		})
+		HandleError(c, http.StatusUnauthorized, "INVALID_TOKEN", "Failed to verify Firebase ID token", "Invalid Firebase ID token", err)
 		return
 	}
 

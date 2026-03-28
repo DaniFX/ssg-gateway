@@ -27,19 +27,13 @@ type SendEmailRequest struct {
 func (h *CommunicatorHandler) SendEmail(c *gin.Context) {
 	var req SendEmailRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+		HandleError(c, http.StatusBadRequest, "INVALID_REQUEST", "Failed to bind email request JSON", "Invalid request format", err)
 		return
 	}
 
 	messageID, err := h.communicatorClient.SendEmail(c.Request.Context(), req.To, req.Subject, req.Body, req.IsHTML)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+		HandleError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to send email via communicator", "Failed to send email", err)
 		return
 	}
 
