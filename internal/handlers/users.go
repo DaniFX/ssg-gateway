@@ -40,25 +40,13 @@ type CreateUserRequest struct {
 func (h *UserHandler) CreateUser(c *gin.Context) {
 	var req CreateUserRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INVALID_REQUEST",
-				"message": "Email and password are required",
-			},
-		})
+		HandleError(c, http.StatusBadRequest, "INVALID_REQUEST", "Failed to bind create user request", "Email and password are required", err)
 		return
 	}
 
 	userRecord, err := h.firebaseService.CreateUser(c.Request.Context(), req.Email, req.Password)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "CREATE_FAILED",
-				"message": "Failed to create user: " + err.Error(),
-			},
-		})
+		HandleError(c, http.StatusInternalServerError, "CREATE_FAILED", "Failed to create Firebase user", "Failed to create user", err)
 		return
 	}
 
@@ -76,13 +64,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 	}
 
 	if err := h.userRepo.Create(c.Request.Context(), user); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "CREATE_FAILED",
-				"message": "Failed to save user",
-			},
-		})
+		HandleError(c, http.StatusInternalServerError, "CREATE_FAILED", "Failed to save user to repository", "Failed to save user", err)
 		return
 	}
 
@@ -99,13 +81,7 @@ func (h *UserHandler) CreateUser(c *gin.Context) {
 func (h *UserHandler) ListUsers(c *gin.Context) {
 	users, err := h.userRepo.GetAll(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to fetch users",
-			},
-		})
+		HandleError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch users from repository", "Failed to fetch users", err)
 		return
 	}
 
@@ -129,13 +105,7 @@ func (h *UserHandler) GetUser(c *gin.Context) {
 
 	user, err := h.userRepo.GetByID(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "NOT_FOUND",
-				"message": "User not found",
-			},
-		})
+		HandleError(c, http.StatusNotFound, "NOT_FOUND", "User not found in repository", "User not found", err)
 		return
 	}
 
@@ -157,37 +127,19 @@ func (h *UserHandler) UpdateUserRole(c *gin.Context) {
 
 	var req UpdateUserRoleRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INVALID_REQUEST",
-				"message": "Role is required",
-			},
-		})
+		HandleError(c, http.StatusBadRequest, "INVALID_REQUEST", "Failed to bind update user role request", "Role is required", err)
 		return
 	}
 
 	role, err := h.roleRepo.GetByID(c.Request.Context(), req.Role)
 	if err != nil || role == nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INVALID_ROLE",
-				"message": "Role does not exist",
-			},
-		})
+		HandleError(c, http.StatusBadRequest, "INVALID_ROLE", "Role not found in repository", "Role does not exist", err)
 		return
 	}
 
 	err = h.userRepo.SetUserAppRole(c.Request.Context(), userID, h.appID, req.Role)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to update user role",
-			},
-		})
+		HandleError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update user app role in repository", "Failed to update user role", err)
 		return
 	}
 
@@ -205,25 +157,13 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 	userID := c.Param("id")
 
 	if err := h.firebaseService.DeleteUser(c.Request.Context(), userID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to delete user from Firebase",
-			},
-		})
+		HandleError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete user from Firebase", "Failed to delete user from Firebase", err)
 		return
 	}
 
 	err := h.userRepo.Delete(c.Request.Context(), userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to delete user from database",
-			},
-		})
+		HandleError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete user from database", "Failed to delete user from database", err)
 		return
 	}
 
@@ -246,13 +186,7 @@ func NewRoleHandler(roleRepo repository.RoleRepository) *RoleHandler {
 func (h *RoleHandler) ListRoles(c *gin.Context) {
 	roles, err := h.roleRepo.GetAll(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to fetch roles",
-			},
-		})
+		HandleError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch roles from repository", "Failed to fetch roles", err)
 		return
 	}
 
@@ -267,13 +201,7 @@ func (h *RoleHandler) GetRole(c *gin.Context) {
 
 	role, err := h.roleRepo.GetByID(c.Request.Context(), roleID)
 	if err != nil || role == nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "NOT_FOUND",
-				"message": "Role not found",
-			},
-		})
+		HandleError(c, http.StatusNotFound, "NOT_FOUND", "Role not found in repository", "Role not found", err)
 		return
 	}
 
@@ -297,25 +225,13 @@ func (h *RoleHandler) CreateRole(c *gin.Context) {
 	}
 
 	if role.ID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INVALID_REQUEST",
-				"message": "Role ID is required",
-			},
-		})
+		HandleError(c, http.StatusBadRequest, "INVALID_REQUEST", "Role ID is missing", "Role ID is required", nil)
 		return
 	}
 
 	err := h.roleRepo.Create(c.Request.Context(), &role)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to create role",
-			},
-		})
+		HandleError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create role in repository", "Failed to create role", err)
 		return
 	}
 
@@ -344,13 +260,7 @@ func (h *RoleHandler) UpdateRole(c *gin.Context) {
 
 	err := h.roleRepo.Update(c.Request.Context(), &role)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to update role",
-			},
-		})
+		HandleError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update role in repository", "Failed to update role", err)
 		return
 	}
 
@@ -365,13 +275,7 @@ func (h *RoleHandler) DeleteRole(c *gin.Context) {
 
 	err := h.roleRepo.Delete(c.Request.Context(), roleID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to delete role",
-			},
-		})
+		HandleError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete role from repository", "Failed to delete role", err)
 		return
 	}
 

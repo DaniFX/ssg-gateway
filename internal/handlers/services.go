@@ -30,10 +30,7 @@ func NewServiceHandler(discoveryService *services.DiscoveryService, dbClient *fi
 func (h *ServiceHandler) GetServices(c *gin.Context) {
 	services, err := h.serviceRepo.GetAll(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+		HandleError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch services", "Failed to fetch services", err)
 		return
 	}
 
@@ -48,10 +45,7 @@ func (h *ServiceHandler) GetService(c *gin.Context) {
 	id := c.Param("id")
 	service, err := h.serviceRepo.GetByID(c.Request.Context(), id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"success": false,
-			"message": "Service not found",
-		})
+		HandleError(c, http.StatusNotFound, "NOT_FOUND", "Service not found", "Service not found", err)
 		return
 	}
 
@@ -65,18 +59,12 @@ func (h *ServiceHandler) GetService(c *gin.Context) {
 func (h *ServiceHandler) CreateService(c *gin.Context) {
 	var service models.Service
 	if err := c.ShouldBindJSON(&service); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+		HandleError(c, http.StatusBadRequest, "INVALID_REQUEST", "Failed to bind service JSON", "Invalid request format", err)
 		return
 	}
 
 	if err := h.serviceRepo.Create(c.Request.Context(), &service); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+		HandleError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create service", "Failed to create service", err)
 		return
 	}
 
@@ -91,19 +79,13 @@ func (h *ServiceHandler) UpdateService(c *gin.Context) {
 	id := c.Param("id")
 	var service models.Service
 	if err := c.ShouldBindJSON(&service); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+		HandleError(c, http.StatusBadRequest, "INVALID_REQUEST", "Failed to bind service JSON for update", "Invalid request format", err)
 		return
 	}
 
 	service.ID = id
 	if err := h.serviceRepo.Update(c.Request.Context(), &service); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+		HandleError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update service", "Failed to update service", err)
 		return
 	}
 
@@ -117,10 +99,7 @@ func (h *ServiceHandler) UpdateService(c *gin.Context) {
 func (h *ServiceHandler) DeleteService(c *gin.Context) {
 	id := c.Param("id")
 	if err := h.serviceRepo.Delete(c.Request.Context(), id); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+		HandleError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete service", "Failed to delete service", err)
 		return
 	}
 
@@ -135,10 +114,7 @@ func (h *ServiceHandler) GetServiceEndpoints(c *gin.Context) {
 	serviceID := c.Param("serviceID")
 	endpoints, err := h.endpointRepo.GetByServiceID(c.Request.Context(), serviceID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+		HandleError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch service endpoints", "Failed to fetch service endpoints", err)
 		return
 	}
 
@@ -151,10 +127,7 @@ func (h *ServiceHandler) GetServiceEndpoints(c *gin.Context) {
 // TriggerDiscovery manually triggers service discovery
 func (h *ServiceHandler) TriggerDiscovery(c *gin.Context) {
 	if err := h.serviceService.DiscoverAllServices(c.Request.Context()); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
+		HandleError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to trigger discovery", "Failed to trigger discovery", err)
 		return
 	}
 

@@ -21,13 +21,7 @@ func NewAppHandler(appRepo repository.AppRepository) *AppHandler {
 func (h *AppHandler) ListApps(c *gin.Context) {
 	apps, err := h.appRepo.GetAll(c.Request.Context())
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to fetch apps",
-			},
-		})
+		HandleError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to fetch apps from repository", "Failed to fetch apps", err)
 		return
 	}
 
@@ -42,13 +36,7 @@ func (h *AppHandler) GetApp(c *gin.Context) {
 
 	app, err := h.appRepo.GetByID(c.Request.Context(), appID)
 	if err != nil || app == nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "NOT_FOUND",
-				"message": "App not found",
-			},
-		})
+		HandleError(c, http.StatusNotFound, "NOT_FOUND", "App not found in repository", "App not found", err)
 		return
 	}
 
@@ -61,36 +49,18 @@ func (h *AppHandler) GetApp(c *gin.Context) {
 func (h *AppHandler) CreateApp(c *gin.Context) {
 	var app models.App
 	if err := c.ShouldBindJSON(&app); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INVALID_REQUEST",
-				"message": "Invalid request body",
-			},
-		})
+		HandleError(c, http.StatusBadRequest, "INVALID_REQUEST", "Failed to bind app JSON", "Invalid request body", err)
 		return
 	}
 
 	if app.ID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INVALID_REQUEST",
-				"message": "App ID is required",
-			},
-		})
+		HandleError(c, http.StatusBadRequest, "INVALID_REQUEST", "App ID is missing in create request", "App ID is required", nil)
 		return
 	}
 
 	err := h.appRepo.Create(c.Request.Context(), &app)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to create app",
-			},
-		})
+		HandleError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to create app in repository", "Failed to create app", err)
 		return
 	}
 
@@ -105,13 +75,7 @@ func (h *AppHandler) UpdateApp(c *gin.Context) {
 
 	var app models.App
 	if err := c.ShouldBindJSON(&app); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INVALID_REQUEST",
-				"message": "Invalid request body",
-			},
-		})
+		HandleError(c, http.StatusBadRequest, "INVALID_REQUEST", "Failed to bind app JSON for update", "Invalid request body", err)
 		return
 	}
 
@@ -119,13 +83,7 @@ func (h *AppHandler) UpdateApp(c *gin.Context) {
 
 	err := h.appRepo.Update(c.Request.Context(), &app)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to update app",
-			},
-		})
+		HandleError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update app in repository", "Failed to update app", err)
 		return
 	}
 
@@ -140,13 +98,7 @@ func (h *AppHandler) DeleteApp(c *gin.Context) {
 
 	err := h.appRepo.Delete(c.Request.Context(), appID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"error": gin.H{
-				"code":    "INTERNAL_ERROR",
-				"message": "Failed to delete app",
-			},
-		})
+		HandleError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to delete app from repository", "Failed to delete app", err)
 		return
 	}
 

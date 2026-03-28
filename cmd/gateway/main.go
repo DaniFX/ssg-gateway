@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
+	"os"
 	"time"
 
 	"github.com/gin-contrib/cors"
@@ -19,8 +21,13 @@ import (
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	slog.SetDefault(logger)
+
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using environment variables")
+		slog.Warn("No .env file found, using environment variables")
 	}
 
 	cfg := config.Load()
@@ -60,6 +67,12 @@ func main() {
 		defer communicatorClient.Close()
 	}
 
+	loggingService, err := services.NewLoggingService(context.Background(), cfg.FirestoreConfig.ProjectID, cfg.FirebaseConfig.CredentialsPath)
+	if err != nil {
+		slog.Warn("Failed to initialize GCP Logging Service. Logs endpoint may not work.", "error", err)
+	}
+	logsHandler := handlers.NewLogsHandler(loggingService)
+
 	// Initialize service discovery service with route update callback
 	discoveryService := services.NewDiscoveryService(dbClient, cfg, nil)
 	// Start discovery in background
@@ -67,6 +80,7 @@ func main() {
 
 	// Initialize route configurator
 	r := gin.Default()
+	r.Use(middleware.LoggerContext())
 	routeConfigurator := services.NewRouteConfigurator(dbClient, cfg, r)
 	// Start route configuration in background
 	go routeConfigurator.Start(context.Background())
@@ -160,6 +174,8 @@ func main() {
 				admin.DELETE("/apps/:id", appHandler.DeleteApp)
 
 				admin.POST("/send-email", communicatorHandler.SendEmail)
+
+				admin.GET("/logs", logsHandler.GetLogs)
 			}
 		}
 	}
