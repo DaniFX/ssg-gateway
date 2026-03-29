@@ -123,16 +123,3 @@ func (h *ServiceHandler) GetServiceEndpoints(c *gin.Context) {
 		"data":    endpoints,
 	})
 }
-
-// TriggerDiscovery manually triggers service discovery
-func (h *ServiceHandler) TriggerDiscovery(c *gin.Context) {
-	if err := h.serviceService.DiscoverAllServices(c.Request.Context()); err != nil {
-		HandleError(c, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to trigger discovery", "Failed to trigger discovery", err)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Service discovery triggered successfully",
-	})
-}

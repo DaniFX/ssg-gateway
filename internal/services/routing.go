@@ -15,6 +15,8 @@ import (
 	"github.com/ssg/ssg-gateway/internal/config"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/oauth2"
+	"google.golang.org/api/idtoken"
 )
 
 // RouteConfigurator handles dynamic route configuration based on discovered services
@@ -28,6 +30,10 @@ type RouteConfigurator struct {
 	activeRoutes map[string]*routeInfo
 	mu           sync.RWMutex
 	stopChan     chan struct{}
+
+	// Caching per i generatori di Token OIDC (evita di bloccare ogni singola richiesta HTTP)
+	tokenSources map[string]oauth2.TokenSource
+	tsMu         sync.RWMutex
 }
 
 // routeInfo tracks information about an active route
@@ -50,20 +56,44 @@ func NewRouteConfigurator(dbClient *ssgfirestore.Client, cfg *config.Config, rou
 		httpClient:   &http.Client{Timeout: 30 * time.Second},
 		activeRoutes: make(map[string]*routeInfo),
 		stopChan:     make(chan struct{}),
+		tokenSources: make(map[string]oauth2.TokenSource),
 	}
 }
 
-// Start begins monitoring for service/endpoint changes and updating routes
+// getTokenSource recupera o crea un generatore di token OIDC per un URL specifico
+func (r *RouteConfigurator) getTokenSource(ctx context.Context, audience string) (oauth2.TokenSource, error) {
+	// Lettura rapida dalla cache
+	r.tsMu.RLock()
+	ts, exists := r.tokenSources[audience]
+	r.tsMu.RUnlock()
+	if exists {
+		return ts, nil
+	}
+
+	// Lock in scrittura se non esiste
+	r.tsMu.Lock()
+	defer r.tsMu.Unlock()
+
+	// Doppio controllo (pattern standard) per sicurezza in concorrenza
+	if ts, exists := r.tokenSources[audience]; exists {
+		return ts, nil
+	}
+
+	// Crea il nuovo token source per il microservizio target
+	ts, err := idtoken.NewTokenSource(ctx, audience)
+	if err != nil {
+		return nil, err
+	}
+
+	r.tokenSources[audience] = ts
+	return ts, nil
+}
+
+// Start begins initial route configuration
 func (r *RouteConfigurator) Start(ctx context.Context) error {
-	// Perform initial route setup
 	if err := r.setupRoutes(ctx); err != nil {
 		return fmt.Errorf("initial route setup failed: %w", err)
 	}
-
-	// Start watching for changes in services and endpoints
-	go r.watchServices(ctx)
-	go r.watchEndpoints(ctx)
-
 	return nil
 }
 
@@ -72,15 +102,19 @@ func (r *RouteConfigurator) Stop() {
 	close(r.stopChan)
 }
 
+// RefreshRoutes viene chiamato esternamente (es. dal discovery service)
+func (r *RouteConfigurator) RefreshRoutes() error {
+	fmt.Println("🔄 Refreshing routes from database due to new service registration...")
+	return r.setupRoutes(context.Background())
+}
+
 // setupRoutes creates routes for all currently active services and endpoints
 func (r *RouteConfigurator) setupRoutes(ctx context.Context) error {
-	// Get all active services
 	services, err := r.serviceRepo.GetActive(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get active services: %w", err)
 	}
 
-	// For each service, get its active endpoints and create routes
 	for _, service := range services {
 		endpoints, err := r.endpointRepo.GetActiveByServiceID(ctx, service.ID)
 		if err != nil {
@@ -100,25 +134,19 @@ func (r *RouteConfigurator) setupRoutes(ctx context.Context) error {
 
 // registerRoute creates a single route in the Gin router
 func (r *RouteConfigurator) registerRoute(ctx context.Context, service models.Service, endpoint models.ServiceEndpoint) error {
-	// Skip if service URL is not set
 	if service.URL == "" {
 		return fmt.Errorf("service %s has no URL configured", service.Name)
 	}
 
-	// Generate a unique key for this route
 	routeKey := fmt.Sprintf("%s:%s:%s", service.ID, endpoint.ID, endpoint.Method)
 
-	// Check if route already exists
 	r.mu.Lock()
 	if _, exists := r.activeRoutes[routeKey]; exists {
 		r.mu.Unlock()
-		return nil // Route already exists
+		return nil
 	}
 	r.mu.Unlock()
 
-	// Construct the full path for the gateway route
-	// Format: /{service-name}{endpoint-path}
-	// Ensure service name starts with / and doesn't have trailing slash
 	servicePath := strings.TrimRight(service.Name, "/")
 	if servicePath == "" {
 		servicePath = "/"
@@ -126,18 +154,14 @@ func (r *RouteConfigurator) registerRoute(ctx context.Context, service models.Se
 		servicePath = "/" + servicePath
 	}
 
-	// Ensure endpoint path starts with /
 	endpointPath := endpoint.Path
 	if !strings.HasPrefix(endpointPath, "/") {
 		endpointPath = "/" + endpointPath
 	}
 
 	fullPath := servicePath + endpointPath
-
-	// Create the proxy handler for this route
 	handler := r.createProxyHandler(service, endpoint)
 
-	// Register the route with Gin
 	switch endpoint.Method {
 	case http.MethodGet:
 		r.router.GET(fullPath, handler)
@@ -157,7 +181,6 @@ func (r *RouteConfigurator) registerRoute(ctx context.Context, service models.Se
 		return fmt.Errorf("unsupported HTTP method: %s", endpoint.Method)
 	}
 
-	// Track the active route
 	r.mu.Lock()
 	r.activeRoutes[routeKey] = &routeInfo{
 		serviceID:    service.ID,
@@ -172,8 +195,6 @@ func (r *RouteConfigurator) registerRoute(ctx context.Context, service models.Se
 }
 
 // unregisterRoute removes a route from the Gin router
-// Note: Gin doesn't support unregistering routes directly, so we mark them as inactive
-// and handle 404s in the proxy handler instead of actually removing from router
 func (r *RouteConfigurator) unregisterRoute(serviceID, endpointID, method string) {
 	routeKey := fmt.Sprintf("%s:%s:%s", serviceID, endpointID, method)
 
@@ -184,8 +205,10 @@ func (r *RouteConfigurator) unregisterRoute(serviceID, endpointID, method string
 
 // createProxyHandler creates a handler function that proxies requests to the service endpoint
 func (r *RouteConfigurator) createProxyHandler(service models.Service, endpoint models.ServiceEndpoint) gin.HandlerFunc {
+	// Calcoliamo l'audience una volta sola: è l'URL di base del Cloud Run target (es: https://servizio.run.app)
+	audience := strings.TrimRight(service.URL, "/")
+
 	return func(c *gin.Context) {
-		// Check if this route is still active (service/endpoint not deleted/deactivated)
 		routeKey := fmt.Sprintf("%s:%s:%s", service.ID, endpoint.ID, endpoint.Method)
 		r.mu.RLock()
 		if _, active := r.activeRoutes[routeKey]; !active {
@@ -198,9 +221,6 @@ func (r *RouteConfigurator) createProxyHandler(service models.Service, endpoint 
 		}
 		r.mu.RUnlock()
 
-		// Construct the target URL: service.URL + endpoint.Path + original request path/query
-		// We need to strip the service prefix from the request path to avoid duplication
-		// Example: request to /hello-world-go/api/hello should go to service.URL + /api/hello
 		servicePath := strings.TrimRight(service.Name, "/")
 		if servicePath == "" {
 			servicePath = "/"
@@ -209,11 +229,9 @@ func (r *RouteConfigurator) createProxyHandler(service models.Service, endpoint 
 		}
 
 		requestPath := c.Request.URL.Path
-		// Remove the service prefix from the request path
 		if strings.HasPrefix(requestPath, servicePath) {
 			requestPath = strings.TrimPrefix(requestPath, servicePath)
 		}
-		// Ensure we don't have double slashes
 		if strings.HasPrefix(requestPath, "//") {
 			requestPath = strings.TrimPrefix(requestPath, "/")
 		}
@@ -223,62 +241,71 @@ func (r *RouteConfigurator) createProxyHandler(service models.Service, endpoint 
 			targetURL += "?" + c.Request.URL.RawQuery
 		}
 
-		// Create the proxy request
-		proxyReq, err := http.NewRequestWithContext(c.Request.Context(),
-			endpoint.Method, targetURL, c.Request.Body)
+		proxyReq, err := http.NewRequestWithContext(c.Request.Context(), endpoint.Method, targetURL, c.Request.Body)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": "Failed to create proxy request: " + err.Error(),
-			})
+			c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": "Failed to create proxy request"})
 			return
 		}
 
-		// Copy headers from the original request (excluding hop-by-hop headers)
+		// Copia gli header originali
 		copyHeaders(proxyReq.Header, c.Request.Header)
 
-		// Remove hop-by-hop headers that shouldn't be forwarded
+		// Rimuove gli header "hop-by-hop" che non devono essere proxyati
 		hopByHopHeaders := []string{
-			"Connection",
-			"Keep-Alive",
-			"Proxy-Authenticate",
-			"Proxy-Authorization",
-			"Te",      // canonicalized version of "TE"
-			"Trailer", // canonicalized version of "Trailer"
-			"Transfer-Encoding",
-			"Upgrade",
+			"Connection", "Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization",
+			"Te", "Trailer", "Transfer-Encoding", "Upgrade",
 		}
 		for _, h := range hopByHopHeaders {
 			proxyReq.Header.Del(h)
 		}
 
-		// Execute the proxy request
+		// =========================================================================
+		// INIEZIONE IAM (OIDC TOKEN) E IDENTITÀ UTENTE
+		// =========================================================================
+
+		// 1. Inseriamo il Token OIDC per superare la barriera IAM del microservizio Cloud Run
+		ts, err := r.getTokenSource(c.Request.Context(), audience)
+		if err == nil {
+			token, err := ts.Token()
+			if err == nil {
+				proxyReq.Header.Set("Authorization", "Bearer "+token.AccessToken)
+			} else {
+				fmt.Printf("⚠️ Errore nel generare OIDC token per %s: %v\n", audience, err)
+			}
+		} else {
+			// In locale potrebbe dare errore se non hai GOOGLE_APPLICATION_CREDENTIALS settate,
+			// ma funzionerà in modo nativo e automatico su Cloud Run.
+			fmt.Printf("⚠️ Impossibile inizializzare TokenSource per %s: %v\n", audience, err)
+		}
+
+		// 2. Inoltriamo l'identità dell'utente al Microservizio tramite Header Custom
+		// (Altrimenti il microservizio non saprebbe chi ha fatto la richiesta originaria)
+		if userID, exists := c.Get("userID"); exists {
+			proxyReq.Header.Set("X-User-Id", fmt.Sprint(userID))
+		}
+		if userEmail, exists := c.Get("userEmail"); exists {
+			proxyReq.Header.Set("X-User-Email", fmt.Sprint(userEmail))
+		}
+		if userRole, exists := c.Get("userRole"); exists {
+			proxyReq.Header.Set("X-User-Role", fmt.Sprint(userRole))
+		}
+		// =========================================================================
+
+		// Esegue la richiesta
 		resp, err := r.httpClient.Do(proxyReq)
 		if err != nil {
-			c.JSON(http.StatusBadGateway, gin.H{
-				"success": false,
-				"message": "Failed to connect to service: " + err.Error(),
-			})
+			c.JSON(http.StatusBadGateway, gin.H{"success": false, "message": "Failed to connect to backend service"})
 			return
 		}
 		defer resp.Body.Close()
 
-		// Copy response headers (excluding hop-by-hop headers)
 		copyHeaders(c.Writer.Header(), resp.Header)
-		// Remove hop-by-hop headers from response
 		for _, h := range hopByHopHeaders {
 			c.Writer.Header().Del(h)
 		}
 
-		// Set the status code
 		c.Writer.WriteHeader(resp.StatusCode)
-
-		// Copy the response body
-		_, err = io.Copy(c.Writer, resp.Body)
-		if err != nil {
-			// Log error but don't return as we've already started writing the response
-			fmt.Printf("Error copying response body: %v\n", err)
-		}
+		_, _ = io.Copy(c.Writer, resp.Body)
 	}
 }
 
@@ -287,48 +314,6 @@ func copyHeaders(dst, src http.Header) {
 	for k, vv := range src {
 		for _, v := range vv {
 			dst.Add(k, v)
-		}
-	}
-}
-
-// watchServices monitors the services collection for changes
-func (r *RouteConfigurator) watchServices(ctx context.Context) {
-	// In a real implementation, we would use Firestore snapshots to watch for changes
-	// For simplicity, we'll use polling with a reasonable interval
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-r.stopChan:
-			return
-		case <-ticker.C:
-			if err := r.setupRoutes(ctx); err != nil {
-				fmt.Printf("Error updating routes from services watch: %v\n", err)
-			}
-		}
-	}
-}
-
-// watchEndpoints monitors the endpoints collection for changes
-func (r *RouteConfigurator) watchEndpoints(ctx context.Context) {
-	// In a real implementation, we would use Firestore snapshots to watch for changes
-	// For simplicity, we'll use polling with a reasonable interval
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-r.stopChan:
-			return
-		case <-ticker.C:
-			if err := r.setupRoutes(ctx); err != nil {
-				fmt.Printf("Error updating routes from endpoints watch: %v\n", err)
-			}
 		}
 	}
 }

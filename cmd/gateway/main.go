@@ -11,7 +11,7 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
-	"github.com/ssg/ssg-db"
+	db "github.com/ssg/ssg-db"
 	"github.com/ssg/ssg-db/client/firestore"
 	_ "github.com/ssg/ssg-db/migrations"
 	"github.com/ssg/ssg-gateway/internal/config"
@@ -73,16 +73,27 @@ func main() {
 	}
 	logsHandler := handlers.NewLogsHandler(loggingService)
 
-	// Initialize service discovery service with route update callback
-	discoveryService := services.NewDiscoveryService(dbClient, cfg, nil)
-	// Start discovery in background
-	go discoveryService.Start(context.Background())
+	// 1. PREDICHIARAZIONE del RouteConfigurator
+	// Serve affinché il DiscoveryService possa chiamare il metodo RefreshRoutes()
+	var routeConfigurator *services.RouteConfigurator
 
-	// Initialize route configurator
+	// 2. Inizializza il Discovery Service passando la callback di aggiornamento
+	discoveryService := services.NewDiscoveryService(dbClient, cfg, func() error {
+		if routeConfigurator != nil {
+			// Aggiorna le rotte in memoria non appena un servizio si registra
+			routeConfigurator.RefreshRoutes()
+		}
+		return nil
+	})
+
+	// NOTA BENE: Abbiamo rimosso `go discoveryService.Start(context.Background())`
+	// per disabilitare il polling periodico inutile e costoso.
+
 	r := gin.Default()
 	r.Use(middleware.LoggerContext())
-	routeConfigurator := services.NewRouteConfigurator(dbClient, cfg, r)
-	// Start route configuration in background
+
+	// 3. Inizializza e avvia il Route Configurator
+	routeConfigurator = services.NewRouteConfigurator(dbClient, cfg, r)
 	go routeConfigurator.Start(context.Background())
 
 	r.Use(cors.New(cors.Config{
@@ -108,6 +119,51 @@ func main() {
 	roleHandler := handlers.NewRoleHandler(roleRepo)
 	appHandler := handlers.NewAppHandler(appRepo)
 	communicatorHandler := handlers.NewCommunicatorHandler(communicatorClient)
+
+	// =========================================================================
+	// HANDSHAKE E REGISTRAZIONE MICROSERVIZI (PUSH)
+	// =========================================================================
+	internalAuth := func(c *gin.Context) {
+		secret := c.GetHeader("X-Internal-Secret")
+		if secret == "" || secret != os.Getenv("INTERNAL_SECRET") {
+			c.AbortWithStatusJSON(401, gin.H{"error": "Unauthorized internal access"})
+			return
+		}
+		c.Next()
+	}
+
+	r.POST("/internal/register", internalAuth, func(c *gin.Context) {
+		var reg services.ServiceDiscoveryResponse
+		if err := c.ShouldBindJSON(&reg); err != nil {
+			c.JSON(400, gin.H{"error": "Invalid registration payload", "details": err.Error()})
+			return
+		}
+
+		// Recupera l'URL target del microservizio.
+		// Il microservizio può inviarlo come header "X-Service-Url" oppure nel payload (es. reg.Metadata["targetUrl"])
+		serviceURL := c.GetHeader("X-Service-Url")
+		if serviceURL == "" && reg.Metadata != nil {
+			serviceURL = reg.Metadata["targetUrl"]
+		}
+
+		if serviceURL == "" {
+			c.JSON(400, gin.H{"error": "Service URL is required. Send it via 'X-Service-Url' header or in metadata as 'targetUrl'"})
+			return
+		}
+
+		// Registra il servizio e i suoi endpoint su Firestore
+		err := discoveryService.RegisterService(c.Request.Context(), reg, serviceURL)
+		if err != nil {
+			c.JSON(500, gin.H{"success": false, "error": err.Error()})
+			return
+		}
+
+		c.JSON(200, gin.H{
+			"success": true,
+			"message": fmt.Sprintf("Service %s registered successfully", reg.ServiceName),
+		})
+	})
+	// =========================================================================
 
 	r.GET("/health", healthHandler.Health)
 	r.GET("/ready", healthHandler.Ready)

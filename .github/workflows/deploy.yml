@@ -29,8 +29,9 @@ jobs:
           service: ssg-gateway
           region: europe-west8
           source: .
-          flags: --allow-unauthenticated --port=8080
+          flags: --allow-unauthenticated --port=8080 --service-account=gateway-runtime-sa@ssg-api-99ac0.iam.gserviceaccount.com
           env_vars: |
             FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}
             FIRESTORE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}
             ADMIN_EMAILS=${{ secrets.ADMIN_EMAILS }}
+            INTERNAL_SECRET=${{ secrets.INTERNAL_SECRET }}
