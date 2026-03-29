@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -15,136 +14,91 @@ import (
 
 // DiscoveryService handles discovering services and their endpoints
 type DiscoveryService struct {
-	dbClient          *ssgfirestore.Client
-	cfg               *config.Config
-	httpClient        *http.Client
-	discoveryInterval time.Duration
-	stopChan          chan struct{}
-	serviceRepo       repository.ServiceRepository
-	endpointRepo      repository.ServiceEndpointRepository
-	updateCallback    func() error
+	dbClient       *ssgfirestore.Client
+	cfg            *config.Config
+	httpClient     *http.Client
+	serviceRepo    repository.ServiceRepository
+	endpointRepo   repository.ServiceEndpointRepository
+	updateCallback func() error
 }
 
 // NewDiscoveryService creates a new discovery service
 func NewDiscoveryService(dbClient *ssgfirestore.Client, cfg *config.Config, updateCallback func() error) *DiscoveryService {
 	return &DiscoveryService{
-		dbClient:          dbClient,
-		cfg:               cfg,
-		httpClient:        &http.Client{Timeout: 10 * time.Second},
-		discoveryInterval: 30 * time.Second, // Discover every 30 seconds
-		stopChan:          make(chan struct{}),
-		serviceRepo:       dbClient.Service(),
-		endpointRepo:      dbClient.ServiceEndpoint(),
-		updateCallback:    updateCallback,
+		dbClient:       dbClient,
+		cfg:            cfg,
+		httpClient:     &http.Client{Timeout: 10 * time.Second},
+		serviceRepo:    dbClient.Service(),
+		endpointRepo:   dbClient.ServiceEndpoint(),
+		updateCallback: updateCallback,
 	}
 }
 
-// Start begins the discovery process
-func (s *DiscoveryService) Start(ctx context.Context) error {
-	// Initial discovery
-	if err := s.DiscoverAllServices(ctx); err != nil {
-		return fmt.Errorf("initial service discovery failed: %w", err)
-	}
+// RegisterService viene chiamato quando un microservizio fa l'handshake (Push).
+func (s *DiscoveryService) RegisterService(ctx context.Context, registration ServiceDiscoveryResponse, serviceURL string) error {
+	// 1. Dobbiamo recuperare il servizio. Dato che non hai GetByName, cerchiamo tutti i servizi attivi
+	// e li filtriamo per nome. In Firestore, l'ID del documento spesso COINCIDE con il nome del servizio.
+	// Per sicurezza, iteriamo o proviamo a usare GetByID con il ServiceName (se l'ID è il nome).
 
-	// Start periodic discovery
-	ticker := time.NewTicker(s.discoveryInterval)
-	defer ticker.Stop()
+	var targetService *models.Service
 
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-s.stopChan:
-			return nil
-		case <-ticker.C:
-			if err := s.DiscoverAllServices(ctx); err != nil {
-				// Log error but continue discovery
-				// In a real implementation, you'd want proper logging
-				fmt.Printf("Service discovery error: %v\n", err)
+	// Tentativo 1: Recupera tutti e cerca per nome
+	services, err := s.serviceRepo.GetAll(ctx)
+	if err == nil {
+		for _, srv := range services {
+			if srv.Name == registration.ServiceName {
+				targetService = &srv
+				break
 			}
 		}
 	}
-}
 
-// Stop halts the discovery process
-func (s *DiscoveryService) Stop() {
-	close(s.stopChan)
-}
+	// 2. Se non esiste, lo creiamo
+	if targetService == nil {
+		// Crea un nuovo servizio usando un ID univoco. Qui usiamo il nome come ID per semplicità,
+		// oppure lasciamo che il repository generi l'ID (se ID è vuoto).
+		newSrv := models.Service{
+			ID:          registration.ServiceName, // Usa il nome come ID document su Firestore se appropriato
+			Name:        registration.ServiceName,
+			URL:         serviceURL,
+			Description: registration.Description,
+			Version:     registration.Version,
+			Metadata:    registration.Metadata,
+			IsActive:    true,
+		}
 
-// DiscoverAllServices discovers all registered services
-func (s *DiscoveryService) DiscoverAllServices(ctx context.Context) error {
-	// Get all active services from Firestore
-	services, err := s.serviceRepo.GetActive(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get active services: %w", err)
-	}
+		if err := s.serviceRepo.Create(ctx, &newSrv); err != nil {
+			return fmt.Errorf("failed to create new service %s: %w", registration.ServiceName, err)
+		}
+		targetService = &newSrv
+	} else {
+		// 3. Se esiste, aggiorniamo i dati
+		targetService.URL = serviceURL
+		targetService.Version = registration.Version
+		targetService.Description = registration.Description
+		targetService.Metadata = registration.Metadata
+		targetService.IsActive = true
 
-	// For each service, discover its endpoints
-	for _, service := range services {
-		if err := s.discoverServiceEndpoints(ctx, service); err != nil {
-			// Log error but continue with other services
-			fmt.Printf("Failed to discover endpoints for service %s: %v\n", service.Name, err)
+		if err := s.serviceRepo.Update(ctx, targetService); err != nil {
+			return fmt.Errorf("failed to update service %s: %w", targetService.Name, err)
 		}
 	}
 
-	return nil
-}
-
-// discoverServiceEndpoints discovers endpoints for a specific service
-func (s *DiscoveryService) discoverServiceEndpoints(ctx context.Context, service models.Service) error {
-	// Skip if service URL is not set
-	if service.URL == "" {
-		return fmt.Errorf("service %s has no URL configured", service.Name)
-	}
-
-	// Call the service's discovery endpoint
-	discoveryURL := fmt.Sprintf("%s/_discover", service.URL)
-	resp, err := s.httpClient.Get(discoveryURL)
-	if err != nil {
-		return fmt.Errorf("failed to call discovery endpoint %s: %w", discoveryURL, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("discovery endpoint returned status %d", resp.StatusCode)
-	}
-
-	// Parse the discovery response
-	var discoveryResp ServiceDiscoveryResponse
-	if err := json.NewDecoder(resp.Body).Decode(&discoveryResp); err != nil {
-		return fmt.Errorf("failed to decode discovery response: %w", err)
-	}
-
-	// Validate the response
-	if discoveryResp.ServiceName != service.Name {
-		return fmt.Errorf("service name mismatch: expected %s, got %s", service.Name, discoveryResp.ServiceName)
-	}
-
-	// Update service metadata and version
-	service.Description = discoveryResp.Description
-	service.Version = discoveryResp.Version
-	service.Metadata = discoveryResp.Metadata
-	if err := s.serviceRepo.Update(ctx, &service); err != nil {
-		return fmt.Errorf("failed to update service: %w", err)
-	}
-
-	// Deactivate all existing endpoints for this service
-	existingEndpoints, err := s.endpointRepo.GetByServiceID(ctx, service.ID)
-	if err != nil {
-		return fmt.Errorf("failed to get existing endpoints: %w", err)
-	}
-	for _, endpoint := range existingEndpoints {
-		if err := s.endpointRepo.Deactivate(ctx, endpoint.ID); err != nil {
-			fmt.Printf("Failed to deactivate endpoint %s: %v\n", endpoint.ID, err)
-			// Continue with other endpoints
+	// 4. Deactivate all existing endpoints for this service prima di inserirli nuovi
+	existingEndpoints, err := s.endpointRepo.GetByServiceID(ctx, targetService.ID)
+	if err == nil {
+		for _, endpoint := range existingEndpoints {
+			if err := s.endpointRepo.Deactivate(ctx, endpoint.ID); err != nil {
+				fmt.Printf("Failed to deactivate endpoint %s: %v\n", endpoint.ID, err)
+			}
 		}
 	}
 
-	// Create new endpoints from discovery response
-	for _, endpointSpec := range discoveryResp.Endpoints {
+	// 5. Create new endpoints from the registration payload
+	for _, endpointSpec := range registration.Endpoints {
 		endpoint := models.ServiceEndpoint{
-			ID:                         generateEndpointID(service.ID, endpointSpec.Path, endpointSpec.Method),
-			ServiceID:                  service.ID,
+			ID:                         generateEndpointID(targetService.ID, endpointSpec.Path, endpointSpec.Method),
+			ServiceID:                  targetService.ID,
 			Path:                       endpointSpec.Path,
 			Method:                     endpointSpec.Method,
 			Summary:                    endpointSpec.Summary,
@@ -157,14 +111,14 @@ func (s *DiscoveryService) discoverServiceEndpoints(ctx context.Context, service
 		}
 
 		if err := s.endpointRepo.Create(ctx, &endpoint); err != nil {
-			return fmt.Errorf("failed to create endpoint: %w", err)
+			fmt.Printf("Failed to create endpoint %s for service %s: %v\n", endpoint.Path, targetService.Name, err)
+			// Non blocchiamo tutto se fallisce un endpoint, proseguiamo col prossimo
 		}
 	}
 
-	// If we have an update callback, call it to update routes
+	// 6. Trigger route update callback per il Gateway
 	if s.updateCallback != nil {
 		if err := s.updateCallback(); err != nil {
-			// Log error but continue
 			fmt.Printf("Failed to update routes after service discovery: %v\n", err)
 		}
 	}
@@ -174,12 +128,10 @@ func (s *DiscoveryService) discoverServiceEndpoints(ctx context.Context, service
 
 // generateEndpointID creates a unique ID for an endpoint
 func generateEndpointID(serviceID, path, method string) string {
-	// Simple hash-based ID generation
-	// In production, you might want to use a proper UUID or hash
 	return fmt.Sprintf("%s-%s-%s", serviceID, method, path)
 }
 
-// ServiceDiscoveryResponse represents the response from a service's discovery endpoint
+// ServiceDiscoveryResponse represents the response from a service's discovery endpoint (Push Payload)
 type ServiceDiscoveryResponse struct {
 	ServiceName string            `json:"serviceName"`
 	Description string            `json:"description,omitempty"`
