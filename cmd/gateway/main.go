@@ -58,6 +58,8 @@ func main() {
 	appRepo := dbClient.App()
 
 	appID := "ssg-admin"
+
+	// Qui inizializzi il middleware di Firebase per i JWT
 	authMiddleware := middleware.NewFirebaseAuthMiddleware(firebaseService, userRepo, appID, cfg.AdminConfig.Emails)
 
 	communicatorClient, err := services.NewCommunicatorClient(cfg)
@@ -86,14 +88,12 @@ func main() {
 		return nil
 	})
 
-	// NOTA BENE: Abbiamo rimosso `go discoveryService.Start(context.Background())`
-	// per disabilitare il polling periodico inutile e costoso.
-
 	r := gin.Default()
 	r.Use(middleware.LoggerContext())
 
 	// 3. Inizializza e avvia il Route Configurator
-	routeConfigurator = services.NewRouteConfigurator(dbClient, cfg, r)
+	// MODIFICA QUI: Passiamo authMiddleware.Authenticate() al costruttore!
+	routeConfigurator = services.NewRouteConfigurator(dbClient, cfg, r, authMiddleware.Authenticate())
 	go routeConfigurator.Start(context.Background())
 
 	r.Use(cors.New(cors.Config{
@@ -114,7 +114,8 @@ func main() {
 	r.Use(rateLimiter.Middleware())
 
 	healthHandler := handlers.NewHealthHandler()
-	authHandler := handlers.NewAuthHandler(firebaseService, appID, cfg.AdminConfig.Emails)
+	webApiKey := os.Getenv("FIREBASE_WEB_API_KEY")
+	authHandler := handlers.NewAuthHandler(firebaseService, appID, cfg.AdminConfig.Emails, webApiKey)
 	userHandler := handlers.NewUserHandler(userRepo, roleRepo, firebaseService, appID)
 	roleHandler := handlers.NewRoleHandler(roleRepo)
 	appHandler := handlers.NewAppHandler(appRepo)
@@ -139,8 +140,6 @@ func main() {
 			return
 		}
 
-		// Recupera l'URL target del microservizio.
-		// Il microservizio può inviarlo come header "X-Service-Url" oppure nel payload (es. reg.Metadata["targetUrl"])
 		serviceURL := c.GetHeader("X-Service-Url")
 		if serviceURL == "" && reg.Metadata != nil {
 			serviceURL = reg.Metadata["targetUrl"]
@@ -151,7 +150,6 @@ func main() {
 			return
 		}
 
-		// Registra il servizio e i suoi endpoint su Firestore
 		err := discoveryService.RegisterService(c.Request.Context(), reg, serviceURL)
 		if err != nil {
 			c.JSON(500, gin.H{"success": false, "error": err.Error()})

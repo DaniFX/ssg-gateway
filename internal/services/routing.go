@@ -31,6 +31,9 @@ type RouteConfigurator struct {
 	mu           sync.RWMutex
 	stopChan     chan struct{}
 
+	// AGGIUNTO: Il middleware di autenticazione JWT da applicare dinamicamente
+	authMiddleware gin.HandlerFunc
+
 	// Caching per i generatori di Token OIDC (evita di bloccare ogni singola richiesta HTTP)
 	tokenSources map[string]oauth2.TokenSource
 	tsMu         sync.RWMutex
@@ -46,17 +49,19 @@ type routeInfo struct {
 }
 
 // NewRouteConfigurator creates a new route configurator
-func NewRouteConfigurator(dbClient *ssgfirestore.Client, cfg *config.Config, router *gin.Engine) *RouteConfigurator {
+// AGGIUNTO: parametro authMiddleware
+func NewRouteConfigurator(dbClient *ssgfirestore.Client, cfg *config.Config, router *gin.Engine, authMiddleware gin.HandlerFunc) *RouteConfigurator {
 	return &RouteConfigurator{
-		dbClient:     dbClient,
-		cfg:          cfg,
-		router:       router,
-		serviceRepo:  dbClient.Service(),
-		endpointRepo: dbClient.ServiceEndpoint(),
-		httpClient:   &http.Client{Timeout: 30 * time.Second},
-		activeRoutes: make(map[string]*routeInfo),
-		stopChan:     make(chan struct{}),
-		tokenSources: make(map[string]oauth2.TokenSource),
+		dbClient:       dbClient,
+		cfg:            cfg,
+		router:         router,
+		serviceRepo:    dbClient.Service(),
+		endpointRepo:   dbClient.ServiceEndpoint(),
+		httpClient:     &http.Client{Timeout: 30 * time.Second},
+		activeRoutes:   make(map[string]*routeInfo),
+		stopChan:       make(chan struct{}),
+		authMiddleware: authMiddleware, // Salviamo il middleware
+		tokenSources:   make(map[string]oauth2.TokenSource),
 	}
 }
 
@@ -162,21 +167,31 @@ func (r *RouteConfigurator) registerRoute(ctx context.Context, service models.Se
 	fullPath := servicePath + endpointPath
 	handler := r.createProxyHandler(service, endpoint)
 
+	// AGGIUNTA FONDAMENTALE: Catena dei Middleware
+	var handlersChain []gin.HandlerFunc
+
+	// Se l'endpoint richiede autenticazione, inseriamo il validatore JWT come primo step!
+	if endpoint.AuthRequired {
+		handlersChain = append(handlersChain, r.authMiddleware)
+	}
+	// Aggiungiamo l'handler del proxy come step finale
+	handlersChain = append(handlersChain, handler)
+
 	switch endpoint.Method {
 	case http.MethodGet:
-		r.router.GET(fullPath, handler)
+		r.router.GET(fullPath, handlersChain...)
 	case http.MethodPost:
-		r.router.POST(fullPath, handler)
+		r.router.POST(fullPath, handlersChain...)
 	case http.MethodPut:
-		r.router.PUT(fullPath, handler)
+		r.router.PUT(fullPath, handlersChain...)
 	case http.MethodDelete:
-		r.router.DELETE(fullPath, handler)
+		r.router.DELETE(fullPath, handlersChain...)
 	case http.MethodPatch:
-		r.router.PATCH(fullPath, handler)
+		r.router.PATCH(fullPath, handlersChain...)
 	case http.MethodHead:
-		r.router.HEAD(fullPath, handler)
+		r.router.HEAD(fullPath, handlersChain...)
 	case http.MethodOptions:
-		r.router.OPTIONS(fullPath, handler)
+		r.router.OPTIONS(fullPath, handlersChain...)
 	default:
 		return fmt.Errorf("unsupported HTTP method: %s", endpoint.Method)
 	}
