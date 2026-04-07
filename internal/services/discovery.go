@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	ssgfirestore "github.com/ssg/ssg-db/client/firestore"
@@ -36,10 +37,6 @@ func NewDiscoveryService(dbClient *ssgfirestore.Client, cfg *config.Config, upda
 
 // RegisterService viene chiamato quando un microservizio fa l'handshake (Push).
 func (s *DiscoveryService) RegisterService(ctx context.Context, registration ServiceDiscoveryResponse, serviceURL string) error {
-	// 1. Dobbiamo recuperare il servizio. Dato che non hai GetByName, cerchiamo tutti i servizi attivi
-	// e li filtriamo per nome. In Firestore, l'ID del documento spesso COINCIDE con il nome del servizio.
-	// Per sicurezza, iteriamo o proviamo a usare GetByID con il ServiceName (se l'ID è il nome).
-
 	var targetService *models.Service
 
 	// Tentativo 1: Recupera tutti e cerca per nome
@@ -55,10 +52,8 @@ func (s *DiscoveryService) RegisterService(ctx context.Context, registration Ser
 
 	// 2. Se non esiste, lo creiamo
 	if targetService == nil {
-		// Crea un nuovo servizio usando un ID univoco. Qui usiamo il nome come ID per semplicità,
-		// oppure lasciamo che il repository generi l'ID (se ID è vuoto).
 		newSrv := models.Service{
-			ID:          registration.ServiceName, // Usa il nome come ID document su Firestore se appropriato
+			ID:          registration.ServiceName,
 			Name:        registration.ServiceName,
 			URL:         serviceURL,
 			Description: registration.Description,
@@ -112,7 +107,6 @@ func (s *DiscoveryService) RegisterService(ctx context.Context, registration Ser
 
 		if err := s.endpointRepo.Create(ctx, &endpoint); err != nil {
 			fmt.Printf("Failed to create endpoint %s for service %s: %v\n", endpoint.Path, targetService.Name, err)
-			// Non blocchiamo tutto se fallisce un endpoint, proseguiamo col prossimo
 		}
 	}
 
@@ -128,7 +122,14 @@ func (s *DiscoveryService) RegisterService(ctx context.Context, registration Ser
 
 // generateEndpointID creates a unique ID for an endpoint
 func generateEndpointID(serviceID, path, method string) string {
-	return fmt.Sprintf("%s-%s-%s", serviceID, method, path)
+	// Sostituiamo gli slash con trattini bassi per non far esplodere Firestore
+	safePath := strings.ReplaceAll(path, "/", "_")
+
+	// Opzionale ma consigliato: togliamo anche i due punti (es. ":uid") per avere un ID pulitissimo
+	safePath = strings.ReplaceAll(safePath, ":", "")
+
+	// Esempio risultato: mail-reader-service-GET-_api_v1_mail_messages_uid
+	return fmt.Sprintf("%s-%s-%s", serviceID, method, safePath)
 }
 
 // ServiceDiscoveryResponse represents the response from a service's discovery endpoint (Push Payload)
