@@ -35,3 +35,4 @@ jobs:
             FIRESTORE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}
             ADMIN_EMAILS=${{ secrets.ADMIN_EMAILS }}
             INTERNAL_SECRET=${{ secrets.INTERNAL_SECRET }}
+            FIREBASE_WEB_API_KEY=${{ secrets.FIREBASE_WEB_API_KEY }}
