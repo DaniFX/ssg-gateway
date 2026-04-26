@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"fmt"
 
 	"github.com/gin-gonic/gin"
 	"github.com/ssg/ssg-db/models"
@@ -85,6 +86,23 @@ func (m *FirebaseAuthMiddleware) Authenticate() gin.HandlerFunc {
 		} else {
 			c.Set("userRole", "viewer")
 		}
+
+		// =========================================================================
+        // PROPAGAZIONE NEXUS (Nuovo blocco per i microservizi)
+        // =========================================================================
+        // Inseriamo i claim validati negli header nativi della HTTP Request.
+        // Il reverse proxy li inoltrerà automaticamente ai microservizi downstream.
+        c.Request.Header.Set("X-Nexus-User-ID", userID)
+        c.Request.Header.Set("X-Nexus-Role", c.GetString("userRole"))
+
+        // Gestione del Trace ID per il logging distribuito (opzionale ma consigliato)
+        traceID := c.GetHeader("X-Cloud-Trace-Context") // Header standard di GCP
+        if traceID == "" {
+            // Se non c'è, ne creiamo uno semplice (in prod meglio usare UUID)
+            traceID = fmt.Sprintf("ssg-trace-%d", time.Now().UnixNano())
+        }
+        c.Request.Header.Set("X-Nexus-Trace-ID", traceID)
+        // =========================================================================
 
 		c.Next()
 	}
