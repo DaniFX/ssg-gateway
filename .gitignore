@@ -2,3 +2,4 @@
 /gateway
 !.gitkeep
 firebase-debug.log
+credentials.json
