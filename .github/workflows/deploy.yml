@@ -9,6 +9,10 @@ concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  id-token: write   # necessario per Workload Identity Federation nel reusable
+
 jobs:
   deploy:
     uses: DaniFX/ssg-workflows/.github/workflows/cloudrun-deploy.yml@main
