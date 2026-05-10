@@ -1,38 +1,25 @@
-name: Deploy to Cloud Run
+name: Deploy Gateway
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: 'read'
-      id-token: 'write'
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
-
-      - name: Deploy to Cloud Run
-        uses: google-github-actions/deploy-cloudrun@v2
-        with:
-          service: ssg-gateway
-          region: europe-west8
-          source: .
-          flags: --allow-unauthenticated --port=8080 --service-account=gateway-runtime-sa@ssg-api-99ac0.iam.gserviceaccount.com
-          env_vars: |
-            FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}
-            FIRESTORE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}
-            ADMIN_EMAILS=${{ secrets.ADMIN_EMAILS }}
-            INTERNAL_SECRET=${{ secrets.INTERNAL_SECRET }}
-            FIREBASE_WEB_API_KEY=${{ secrets.FIREBASE_WEB_API_KEY }}
+    uses: DaniFX/ssg-workflows/.github/workflows/cloudrun-deploy.yml@main
+    with:
+      service_name: ssg-gateway
+      ingress_flag: "--allow-unauthenticated"
+      service_account_flag: "--service-account=gateway-runtime-sa@ssg-api-99ac0.iam.gserviceaccount.com"
+      env_vars: |
+        FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}
+        FIRESTORE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}
+        ADMIN_EMAILS=${{ secrets.ADMIN_EMAILS }}
+        INTERNAL_SECRET=${{ secrets.INTERNAL_SECRET }}
+        FIREBASE_WEB_API_KEY=${{ secrets.FIREBASE_WEB_API_KEY }}
+    secrets: inherit
