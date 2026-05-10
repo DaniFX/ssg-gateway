@@ -15,11 +15,9 @@ jobs:
     with:
       service_name: ssg-gateway
       ingress_flag: "--allow-unauthenticated"
-      service_account_flag: "--service-account=gateway-runtime-sa@ssg-api-99ac0.iam.gserviceaccount.com"
-      env_vars: |
-        FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}
-        FIRESTORE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}
-        ADMIN_EMAILS=${{ secrets.ADMIN_EMAILS }}
-        INTERNAL_SECRET=${{ secrets.INTERNAL_SECRET }}
-        FIREBASE_WEB_API_KEY=${{ secrets.FIREBASE_WEB_API_KEY }}
+      extra_flags: "--service-account=gateway-runtime-sa@ssg-api-99ac0.iam.gserviceaccount.com"
     secrets: inherit
+    # Secrets necessari nel repo:
+    #   GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT_EMAIL
+    #   FIREBASE_PROJECT_ID, FIREBASE_WEB_API_KEY
+    #   ADMIN_EMAILS, INTERNAL_SECRET
